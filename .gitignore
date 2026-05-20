@@ -1,0 +1,5 @@
+.claude
+.venv
+clase-1/.env
+clase-1/agente/.env
+.DS_Store
