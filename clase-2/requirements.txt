@@ -1,0 +1,4 @@
+strands-agents
+mcp
+requests
+strands-agents-tools[mem0_memory]
