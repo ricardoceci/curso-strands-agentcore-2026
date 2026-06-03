@@ -74,6 +74,44 @@ El servidor expone los tres primitivos de MCP sobre la API de Duffel y Open-Mete
 
 ---
 
+## Clase 3 — Hooks, Multi-Agente y A2A
+
+Agregamos control y coordinación a los agentes: hooks de observabilidad y enforcement, steering para confirmación humana antes de acciones irreversibles, tres patrones multi-agente (`as_tool`, Swarm, Graph), contexto por llamada con `invocation_state`, y comunicación entre procesos con el protocolo **A2A**.
+
+### Contenido
+
+```
+clase-3/
+├── clase-3.ipynb           # Hooks, multi-agente, invocation_state, A2A
+├── a2a_weather_server.py   # Agente de clima expuesto como servidor A2A
+├── requirements.txt        # Dependencias de la clase
+└── .env.example            # Variables de entorno requeridas
+```
+
+### Notebooks
+
+| Notebook | Qué aprenden |
+|----------|-------------|
+| `clase-3.ipynb` | Hooks de observabilidad (timing por tool call) y enforcement (bloqueo por política corporativa); `LLMSteeringHandler` para pedir confirmación antes de acciones irreversibles; agente como tool con `.as_tool()`; `Swarm` para orquestación con delegación; `GraphBuilder` para pipelines secuenciales; `invocation_state` para propagar metadatos sin contaminar el historial; protocolo A2A para invocar agentes en procesos remotos |
+
+### Servidor A2A (`a2a_weather_server.py`)
+
+Expone el agente de clima como endpoint A2A sobre HTTP.
+
+| Componente | Detalle |
+|------------|---------|
+| Protocolo | A2A (Agent-to-Agent) |
+| Puerto | `9010` |
+| Agente | `weather_agent` con la tool `get_weather` |
+
+> Levantarlo antes de ejecutar la celda A2A del notebook:
+> ```bash
+> cd clase-3
+> python a2a_weather_server.py
+> ```
+
+---
+
 ## Requisitos
 
 - Python 3.11+
@@ -91,6 +129,10 @@ pip install -r requirements.txt
 
 # Clase 2 (desde el mismo .venv o uno nuevo)
 cd clase-2
+pip install -r requirements.txt
+
+# Clase 3
+cd clase-3
 pip install -r requirements.txt
 ```
 
@@ -124,6 +166,11 @@ DUFFEL_API_KEY=duffel_sandbox_...
 MEM0_API_KEY=m0-...
 ```
 
+**`clase-3/.env`**
+```env
+DUFFEL_API_KEY=duffel_sandbox_...
+```
+
 > Las claves de Bedrock se toman automáticamente de las credenciales de AWS configuradas en tu entorno (`~/.aws/credentials` o variables de entorno `AWS_*`).
 
 #### Obtener las claves
@@ -152,6 +199,7 @@ ollama pull qwen3:4b
 | Modelos en la nube | Amazon Bedrock, OpenAI, Anthropic |
 | Modelo local | Ollama + Qwen3 4B |
 | Protocolo de herramientas | [MCP](https://modelcontextprotocol.io) (Model Context Protocol) |
+| Comunicación entre agentes | A2A (Agent-to-Agent protocol) |
 | Memoria persistente | [mem0](https://mem0.ai) |
 | API de vuelos | [Duffel](https://duffel.com) (sandbox) |
 | API de clima | [Open-Meteo](https://open-meteo.com) (sin autenticación) |
@@ -276,10 +324,108 @@ La diferencia clave:
 
 ---
 
+---
+
+## Conceptos clave de la Clase 3
+
+### Hooks
+
+```python
+from strands.hooks import HookProvider, HookRegistry
+from strands.hooks.events import BeforeToolCallEvent, AfterToolCallEvent
+
+class ObservabilityHook(HookProvider):
+    def register_hooks(self, registry: HookRegistry) -> None:
+        registry.add_callback(BeforeToolCallEvent, self.before)
+        registry.add_callback(AfterToolCallEvent, self.after)
+
+    def before(self, event: BeforeToolCallEvent) -> None:
+        print(f">>> tool.start | {event.tool_use['name']}")
+
+    def after(self, event: AfterToolCallEvent) -> None:
+        print(f">>> tool.end   | {event.tool_use['name']}")
+
+agent = Agent(tools=[...], hooks=[ObservabilityHook()])
+```
+
+Para cancelar una tool antes de que se ejecute:
+
+```python
+def gate(self, event: BeforeToolCallEvent) -> None:
+    if event.tool_use['name'] == "search_flights":
+        dest = event.tool_use.get('input', {}).get("destination", "")
+        if dest in RESTRICTED:
+            event.cancel_tool = "Destino restringido por política corporativa."
+```
+
+### Steering — confirmación humana
+
+```python
+from strands.vended_plugins.steering.handlers.llm.llm_handler import LLMSteeringHandler
+
+confirm = LLMSteeringHandler(
+    system_prompt="Antes de ejecutar book_flight, pedí confirmación explícita al usuario."
+)
+agent = Agent(tools=[...], plugins=[confirm])
+```
+
+### Multi-agente
+
+```python
+# Agente como tool
+weather_agent = Agent(name="weather_agent", tools=[get_weather], ...)
+travel_agent = Agent(
+    tools=[search_flights,
+           weather_agent.as_tool(name="weather_agent", description="...")],
+)
+
+# Swarm — orquestación con delegación
+from strands.multiagent import Swarm
+swarm = Swarm([orchestrator, agent_a, agent_b])
+swarm("...")
+
+# Graph — pipeline secuencial con orden fijo
+from strands.multiagent import GraphBuilder
+builder = GraphBuilder()
+builder.add_node(agent_a, "step_a")
+builder.add_node(agent_b, "step_b")
+builder.add_edge("step_a", "step_b")
+graph = builder.build()
+graph("...")
+```
+
+### `invocation_state`
+
+```python
+agent = Agent(tools=[...], hooks=[ContextLogHook()])
+agent(
+    "Buscame vuelos...",
+    invocation_state={"employee_id": "emp_001", "budget_usd": 2500}
+)
+# En los hooks: event.invocation_state.get("employee_id")
+```
+
+### A2A — comunicación entre procesos
+
+```python
+# Servidor (a2a_weather_server.py)
+from strands.multiagent.a2a import A2AServer
+server = A2AServer(agent=weather_agent, host="127.0.0.1", port=9010, enable_a2a_compliant_streaming=True)
+server.serve()
+
+# Cliente
+from strands.agent.a2a_agent import A2AAgent
+remote = A2AAgent(endpoint="http://localhost:9010", name="weather_agent")
+result = remote("¿Qué tiempo hace en Miami hoy?")
+```
+
+---
+
 ## Roadmap del curso
 
 | Clase | Tema |
 |-------|------|
 | **Clase 1** | Introducción a Strands, tools básicas, agente de viajes |
 | **Clase 2** | MCP (Tools, Resources, Prompts), memoria persistente con mem0 |
+| **Clase 3** | Hooks, steering, multi-agente (as_tool / Swarm / Graph), invocation_state, A2A |
 
