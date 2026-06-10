@@ -4,4 +4,6 @@ clase-1/.env
 clase-1/agente/.env
 clase-2/.env
 clase-3/.env
+clase-4/AgenteDeViajes2026/app/AgenteCurso2026/.env
+clase-4/AgenteDeViajes2026/frontend/.env
 .DS_Store

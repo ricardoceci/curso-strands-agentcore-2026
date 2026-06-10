@@ -1,0 +1,51 @@
+[{
+    "name": "get_weather",
+    "description": "Get the daily weather forecast for a city on a specific date. Use this to enrich flight recommendations with weather context, for example when choosing between destinations or when the user wants to know what to pack.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "City name in any supported language, e.g. 'Buenos Aires', 'Miami'."
+            },
+            "target_date": {
+                "type": "string",
+                "description": "Date in YYYY-MM-DD format. Must be within the next 16 days."
+            }
+        },
+        "required": ["city", "target_date"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "Resolved city name."
+            },
+            "country": {
+                "type": "string",
+                "description": "Country of the city."
+            },
+            "date": {
+                "type": "string",
+                "description": "Date of the forecast (YYYY-MM-DD)."
+            },
+            "temperature_max_c": {
+                "type": "number",
+                "description": "Maximum temperature in Celsius."
+            },
+            "temperature_min_c": {
+                "type": "number",
+                "description": "Minimum temperature in Celsius."
+            },
+            "precipitation_mm": {
+                "type": "number",
+                "description": "Total precipitation in millimeters."
+            },
+            "summary": {
+                "type": "string",
+                "description": "Short weather description, e.g. 'Clear sky', 'Light rain'."
+            }
+        }
+    }
+}]

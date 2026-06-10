@@ -1,0 +1,7 @@
+strands-agents
+strands-agents-tools[current_time]
+bedrock-agentcore
+bedrock-agentcore[strands-agents]
+uvicorn
+requests
+mcp
